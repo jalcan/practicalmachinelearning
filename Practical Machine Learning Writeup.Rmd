@@ -1,0 +1,133 @@
+Practical Machine Learning Course Project
+==========================================
+This R Markdown file describes both the analysis and the predictive model created for the project of the "Practical Machine Learning" course by Johns Hopkins Univ. (via Coursera)
+
+Human Activity Recognition: Qualitative Activity Recognition of Weight Lifting Exercises
+-------------------------------------------------------------------------------------------
+
+The data for this analysis come from [Groupware@LES research group][1], especifically from their [Human Activity Recognition projects][2]
+
+The objective of this study is to be able to predict the correctness of a  phisical human activity (weight lifting) from sensor data.
+
+The basic procedure will be:
+
+1. Loading the data
+2. Exploring the data and selecting features
+3. Training the model
+4. Evaluating the model
+
+### 1 Loading data
+As all variables of interest are numerical, I´ll read the possible strings as NOT factors
+and afterwards, I´ll transform the outcome variable (classe) to factor
+
+I´ll part the data into training, 70%, and test, 30%.
+```{r cache=TRUE}
+library(caret)
+
+  pmltraining = read.csv("pml-training.csv" ,na.strings=c('', NA), stringsAsFactors=FALSE)
+  pmltraining$classe = as.factor(pmltraining$classe)
+  inTrain = createDataPartition(pmltraining$classe, p = 0.7, list=FALSE)
+  train = pmltraining[inTrain,]
+  test = pmltraining[-inTrain,]
+```
+
+### 2 Exploring the data
+```{r results="hide"}
+dim(pmltraining)
+dim(train)
+dim(test)
+head(train)
+names(train)
+
+```
+The training data is made of **19622 observations of 160 variables**
+
+From the names I see that some of the variables are not related with actual measurements, but with experimental control data: subject name, record Id, several timestamps, etc. 
+In order to the model to be generalizable, such variables  cannot be used.
+```{r}
+removeIndex <- grep("X|timestamp|user_name|new_window|window",names(train))
+train <- train[,-removeIndex]
+```
+
+There are also a large numbers of NAs in many variables. Let´s sumarize it:
+
+```{r}
+colsNA <-  colSums(is.na(train))
+sum(colsNA>nrow(train)*.9)
+```
+As seen above, 100 variables have more than 90% of their rows with NAs. Those variables will not be used
+
+```{r}
+
+train = train[,-which(colsNA>nrow(train)*.9)]
+dim(train)
+```
+Deleting the non measurements and the NAs features I´ve gone from 160 variables to just 53
+
+As a final check, let´s see how many variables have near zero variance, and therefore have almost none predictive power:
+
+```{r cache=TRUE}
+ nearZeroVar(train[, -53])
+```
+So 0 variables with near zero variance, meaning every variable selected has potential predictive power.
+
+Let's try a model and see how it performs
+
+### 3. Training the model
+
+Sensor data from several points in a person' body while he is lifting weights will have a lot of non-linear properties. It will also have a lot of noise, due to subject movements,  so I´ll use Random Forest to create the predictive model.
+
+Random forest are intrinsically robust when dealing with noisy signals and able to detect complex non-linear relations among predictors and the outcome.
+
+
+Regarding cross-validation, RF do it internally. From [Leo Breiman on Random Forest][3]:
+
+>"In random forests, there is no need for cross-validation or a separate test set to get an unbiased
+>estimate of the test set error. It is estimated internally, during the run, as follows:
+>Each tree is constructed using a different bootstrap sample from the original data. About one-third
+>of the cases are left out of the bootstrap sample and not used in the construction of the kth tree.
+>Put each case left out in the construction of the kth tree down the kth tree to get a classification.
+>In this way, a test set classification is obtained for each case in about one-third of the trees. At
+>the end of the run, take j to be the class that got most of the votes every time case n was oob. The
+>proportion of times that j is not equal to the true class of n averaged over all cases is the oob
+>error estimate. This has proven to be unbiased in many tests" 
+>>>>>>>>>>>***Leo Breiman, Random Forest creator***
+
+```{r predictive, cache=TRUE}
+library(randomForest)
+fit = randomForest(formula = classe ~ ., data = train, ntree = 1000) 
+
+fit
+
+```
+
+
+The previous model shows an OOB (out of the bag) error rate of only 0.52%. Same result if computed from the confusion matrix.
+
+Note: Though in this case OOB error is the same as the confusion matrix calculated error they are not exactly the same. OOB errors are computed with every missclassified data but only with the results of the trees where this data where not used in the training (see note from Leo Breiman above) so it is a cross-validation error.
+
+Let´s evaluate it against the test data for additional validation.
+
+
+```{r dependson="predictive", cache=TRUE}
+preds = predict(fit, newdata=test)
+table(preds, test$classe)
+
+```
+There´s no classification errors in the previous confusion matrix, so the model seems to generalize well and does not seem to suffer from overfitting.
+
+As a side note, I´ve used this same model in the Course Project Submission and it got a 20/20 grade.
+
+
+**References:**  
+  
+1. Groupware@LES  http://groupware.les.inf.puc-rio.br/    
+2. Human Activity Recognitiion Projects http://groupware.les.inf.puc-rio.br/har  
+3. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. Read more: http://groupware.les.inf.puc-rio.br/har#ixzz356MAcwU7  
+4. Random Forest by its creator Leo Breiman http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm
+
+
+
+[1]: http://groupware.les.inf.puc-rio.br/  "Groupware@LES" 
+[2]: http://groupware.les.inf.puc-rio.br/har "Human Activity Recognitiion Projects"
+[3]: http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm "Random Forest by its creator Leo Breiman" 
